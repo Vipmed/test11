@@ -11,15 +11,19 @@ import { collection, query, getDocs, updateDoc, doc, deleteDoc, writeBatch, wher
 
 export default function AdminPanel() {
   const [activeTab, setActiveTab] = useState<'users' | 'database' | 'reports' | 'logs' | 'system'>('users');
-  const [confirmModal, setConfirmModal] = useState<{ message: string; onConfirm: () => void; hideCancel?: boolean } | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{ message: string; onConfirm: () => void; hideCancel?: boolean; requiredWord?: string } | null>(null);
   const [promptModal, setPromptModal] = useState<{ message: string; defaultValue: string; onConfirm: (val: string) => void } | null>(null);
   const [promptValue, setPromptValue] = useState("");
+  const [confirmInput, setConfirmInput] = useState("");
 
   const showAlert = (message: string) => {
      setConfirmModal({
         message,
         hideCancel: true,
-        onConfirm: () => setConfirmModal(null)
+        onConfirm: () => {
+          setConfirmModal(null);
+          setConfirmInput("");
+        }
      });
   };
 
@@ -37,19 +41,44 @@ export default function AdminPanel() {
              >
                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-rose-500 to-orange-500" />
                 <h3 className="text-xl font-black text-white mb-4">Підтвердження дії</h3>
-                <p className="text-xs text-slate-400 mb-8 font-mono leading-relaxed">{confirmModal.message}</p>
+                <p className="text-xs text-slate-400 mb-6 font-mono leading-relaxed">
+                  {confirmModal.message}
+                  {confirmModal.requiredWord && (
+                    <span className="block mt-4 text-rose-500">
+                      Введіть слово <span className="text-white font-black">"{confirmModal.requiredWord}"</span> для підтвердження:
+                    </span>
+                  )}
+                </p>
+
+                {confirmModal.requiredWord && (
+                  <input 
+                    type="text"
+                    value={confirmInput}
+                    onChange={(e) => setConfirmInput(e.target.value.toUpperCase())}
+                    placeholder={confirmModal.requiredWord}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 text-white text-[10px] font-black uppercase tracking-widest placeholder:text-slate-700 focus:outline-none focus:border-rose-500 transition-colors mb-8"
+                  />
+                )}
+
                 <div className="flex gap-3">
                   {!confirmModal.hideCancel && (
                      <button 
-                       onClick={() => setConfirmModal(null)}
+                       onClick={() => {
+                         setConfirmModal(null);
+                         setConfirmInput("");
+                       }}
                        className="flex-1 py-4 bg-slate-800 hover:bg-slate-700 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-colors"
                      >
                        Скасувати
                      </button>
                   )}
                   <button 
-                    onClick={confirmModal.onConfirm}
-                    className="flex-1 py-4 bg-rose-500 hover:bg-rose-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-colors shadow-lg shadow-rose-500/20"
+                    onClick={() => {
+                      confirmModal.onConfirm();
+                      setConfirmInput("");
+                    }}
+                    disabled={!!confirmModal.requiredWord && confirmInput !== confirmModal.requiredWord}
+                    className="flex-1 py-4 bg-rose-500 hover:bg-rose-600 disabled:opacity-50 disabled:grayscale text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-colors shadow-lg shadow-rose-500/20"
                   >
                     Зрозуміло
                   </button>
@@ -186,7 +215,7 @@ export default function AdminPanel() {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -10 }}
         >
-          <SystemTab />
+          <SystemTab setConfirmModal={setConfirmModal} />
         </motion.div>
       )}
       </AnimatePresence>

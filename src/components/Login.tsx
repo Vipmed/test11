@@ -123,7 +123,7 @@ export default function Login() {
           <p className="text-slate-500 text-sm mt-2">Видання ТНМУ (База тестів)</p>
         </div>
 
-        <form onSubmit={handleEmailAuth} className="space-y-3 mb-6">
+        <form onSubmit={handleEmailAuth} className="space-y-3 mb-6" noValidate>
           <div className="space-y-1">
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />

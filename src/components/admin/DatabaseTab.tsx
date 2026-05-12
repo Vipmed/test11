@@ -47,45 +47,75 @@ export default function DatabaseTab({ showAlert, setPromptModal, setPromptValue,
   const removeBase = async (id: string) => {
     setConfirmModal({
       message: "Ви впевнені, що хочете видалити цю базу? Всі питання (включаючи збережені у користувачів) та статистика спроб будуть стерті.",
+      requiredWord: "ВИДАЛИТИ",
       onConfirm: async () => {
         try {
-          // 1. Delete questions (Global and Saved Questions via collection group)
-          const qGroup = collectionGroup(db, "questions");
-          const qSnapshot = await getDocs(query(qGroup, where("baseId", "==", id)));
+          setConfirmModal(null);
+          showAlert("Початок видалення бази. Це може зайняти деякий час...");
+          
+          // 1. Delete global questions first (Single collection query - no special index needed)
+          const gqQuery = query(collection(db, "questions"), where("baseId", "==", id));
+          const gqSnapshot = await getDocs(gqQuery);
           
           let totalDeleted = 0;
-          const docs = qSnapshot.docs;
-          for (let i = 0; i < docs.length; i += 400) {
+          const gqDocs = gqSnapshot.docs;
+          for (let i = 0; i < gqDocs.length; i += 400) {
              const batch = writeBatch(db);
-             const chunk = docs.slice(i, i + 400);
+             const chunk = gqDocs.slice(i, i + 400);
              chunk.forEach((d) => batch.delete(d.ref));
              await batch.commit();
              totalDeleted += chunk.length;
           }
 
-          // 2. Delete attempts (via collection group)
-          const aGroup = collectionGroup(db, "attempts");
-          const aSnapshot = await getDocs(query(aGroup, where("baseId", "==", id)));
-          const aDocs = aSnapshot.docs;
-          for (let i = 0; i < aDocs.length; i += 400) {
-             const batch = writeBatch(db);
-             const chunk = aDocs.slice(i, i + 400);
-             chunk.forEach((d) => batch.delete(d.ref));
-             await batch.commit();
-             totalDeleted += chunk.length;
+          // 2. Delete Saved Questions (via collection group - MIGHT fail if index missing)
+          try {
+             // We search for saved_questions path specifically
+             const qGroup = collectionGroup(db, "questions");
+             const qSnapshot = await getDocs(query(qGroup, where("baseId", "==", id)));
+             const sqDocs = qSnapshot.docs.filter(d => d.ref.path.includes("saved_questions"));
+             
+             for (let i = 0; i < sqDocs.length; i += 400) {
+                const batch = writeBatch(db);
+                const chunk = sqDocs.slice(i, i + 400);
+                chunk.forEach((d) => batch.delete(d.ref));
+                await batch.commit();
+                totalDeleted += chunk.length;
+             }
+          } catch (e: any) {
+             console.error("Saved questions cleanup error:", e);
+             if (e.message?.includes("index")) {
+                console.warn("Firestore index missing for questions group query. Skipping sub-cleanup.");
+             }
+          }
+
+          // 3. Delete attempts (via collection group - MIGHT fail if index missing)
+          try {
+             const aGroup = collectionGroup(db, "attempts");
+             const aSnapshot = await getDocs(query(aGroup, where("baseId", "==", id)));
+             const aDocs = aSnapshot.docs;
+             for (let i = 0; i < aDocs.length; i += 400) {
+                const batch = writeBatch(db);
+                const chunk = aDocs.slice(i, i + 400);
+                chunk.forEach((d) => batch.delete(d.ref));
+                await batch.commit();
+                totalDeleted += chunk.length;
+             }
+          } catch (e: any) {
+             console.error("Attempts cleanup error:", e);
+             if (e.message?.includes("index")) {
+                console.warn("Firestore index missing for attempts group query. Skipping sub-cleanup.");
+             }
           }
           
-          // 3. Delete the base record itself
+          // 4. Delete the base record itself
           await deleteDoc(doc(db, "bases", id));
           
           logEvent(AuditEventType.DB_DELETE, `Base ID: ${id}. Deleted ${totalDeleted} related documents.`);
           fetchBases();
-          setConfirmModal(null);
-          showAlert("Базу та всі пов'язані дані користувачів успішно видалено.");
-        } catch (error) {
-          console.error(error);
-          setConfirmModal(null);
-          showAlert("Помилка при видаленні. Перевірте консоль для деталей.");
+          showAlert(`Успішно видалено. Видалено пов'язаних документів: ${totalDeleted}`);
+        } catch (error: any) {
+          console.error("Critical Deletion Error:", error);
+          showAlert(`Критична помилка при видаленні: ${error.message}`);
         }
       }
     });

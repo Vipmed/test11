@@ -4,9 +4,10 @@ import { collection, query, getDocs, updateDoc, doc, addDoc, deleteDoc, serverTi
 import { initializeApp, getApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import firebaseConfig from '@/firebase-applet-config.json';
-import { Shield, Users, CheckCircle, XCircle, Plus, Search, Trash2, Copy, Check, Loader2 } from "lucide-react";
+import { Shield, Users, CheckCircle, XCircle, Plus, Search, Trash2, Copy, Check, Loader2, Calendar, Clock, ExternalLink, Activity } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { logEvent, AuditEventType } from "@/src/lib/audit";
+import { onSnapshot } from "firebase/firestore";
 
 export interface UserProfile {
   uid: string;
@@ -14,6 +15,12 @@ export interface UserProfile {
   role: 'USER' | 'ADMIN' | 'SUPERADMIN';
   isApproved: boolean;
   createdAt: any;
+  lastSeen?: any;
+  stats?: {
+    totalAttempts: number;
+    correctRate: number;
+    questionsProcessed: number;
+  };
 }
 
 interface UsersTabProps {
@@ -30,9 +37,30 @@ export default function UsersTab({ showAlert, setConfirmModal }: UsersTabProps) 
   const [newUser, setNewUser] = useState({ email: "", role: "USER" });
   const [generatedCreds, setGeneratedCreds] = useState<{login: string, pass: string} | null>(null);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
 
   useEffect(() => {
-    fetchUsers();
+    setLoading(true);
+    const q = query(collection(db, "users"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const userList: UserProfile[] = [];
+      snapshot.forEach((doc) => {
+        userList.push({ uid: doc.id, ...doc.data() } as UserProfile);
+      });
+      // Sort by lastSeen descending
+      userList.sort((a, b) => {
+        const lastA = a.lastSeen?.toMillis?.() || 0;
+        const lastB = b.lastSeen?.toMillis?.() || 0;
+        return lastB - lastA;
+      });
+      setUsers(userList);
+      setLoading(false);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, "users");
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const copyToClipboard = (text: string, type: string) => {
@@ -42,21 +70,11 @@ export default function UsersTab({ showAlert, setConfirmModal }: UsersTabProps) 
     });
   };
 
-  const fetchUsers = async () => {
-    setLoading(true);
-    try {
-      const q = query(collection(db, "users"));
-      const querySnapshot = await getDocs(q);
-      const userList: UserProfile[] = [];
-      querySnapshot.forEach((doc) => {
-        userList.push({ uid: doc.id, ...doc.data() } as UserProfile);
-      });
-      setUsers(userList);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.LIST, "users");
-    } finally {
-      setLoading(false);
-    }
+  const isUserOnline = (lastSeen: any) => {
+    if (!lastSeen) return false;
+    const now = Date.now();
+    const last = lastSeen.toMillis?.() || 0;
+    return (now - last) < 300000; // 5 minutes
   };
 
   const removeUser = async (uid: string, userEmail: string) => {
@@ -75,7 +93,6 @@ export default function UsersTab({ showAlert, setConfirmModal }: UsersTabProps) 
             auth.currentUser?.uid,
             auth.currentUser?.email || undefined
           );
-          fetchUsers();
           setConfirmModal(null);
         } catch (error) {
           setConfirmModal(null);
@@ -96,7 +113,6 @@ export default function UsersTab({ showAlert, setConfirmModal }: UsersTabProps) 
         auth.currentUser?.uid,
         auth.currentUser?.email || undefined
       );
-      fetchUsers();
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `users/${uid}`);
       showAlert("Помилка оновлення статусу.");
@@ -114,7 +130,6 @@ export default function UsersTab({ showAlert, setConfirmModal }: UsersTabProps) 
         auth.currentUser?.uid,
         auth.currentUser?.email || undefined
       );
-      fetchUsers();
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `users/${uid}`);
       showAlert("Помилка оновлення ролі.");
@@ -175,7 +190,6 @@ export default function UsersTab({ showAlert, setConfirmModal }: UsersTabProps) 
       setShowAddModal(false);
       setGeneratedCreds(null);
       setNewUser({ email: "", role: "USER" });
-      fetchUsers();
       showAlert(`Користувача ${finalEmail} успішно створено!`);
     } catch (error: any) {
        console.error("User creation failed:", error);
@@ -222,12 +236,9 @@ export default function UsersTab({ showAlert, setConfirmModal }: UsersTabProps) 
             </button>
             <div className="h-8 w-px bg-slate-800 mx-2" />
             <span className="text-[10px] font-bold text-slate-500 uppercase">Всього: {users.length}</span>
-            <button 
-              onClick={fetchUsers} 
-              className="text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-white transition-colors"
-            >
-              Оновити
-            </button>
+            <span className="text-[10px] font-bold text-emerald-500 uppercase ml-2">
+              Онлайн: {users.filter(u => isUserOnline(u.lastSeen)).length}
+            </span>
           </div>
         </div>
 
@@ -245,51 +256,74 @@ export default function UsersTab({ showAlert, setConfirmModal }: UsersTabProps) 
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/50">
-                {users.filter(u => u.email.toLowerCase().includes(searchTerm.toLowerCase())).map((user) => (
-                  <tr key={user.uid} className="hover:bg-slate-800/20 transition-colors">
-                    <td className="py-4 pl-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center shrink-0 border border-slate-700">
-                          <Users className="w-4 h-4 text-slate-400" />
+                {users.filter(u => u.email.toLowerCase().includes(searchTerm.toLowerCase())).map((user) => {
+                  const online = isUserOnline(user.lastSeen);
+                  return (
+                    <tr 
+                      key={user.uid} 
+                      onClick={() => setSelectedUser(user)}
+                      className="hover:bg-slate-800/40 transition-colors cursor-pointer group"
+                    >
+                      <td className="py-4 pl-4">
+                        <div className="flex items-center gap-3">
+                          <div className="relative">
+                            <div className="w-9 h-9 rounded-full bg-slate-800 flex items-center justify-center shrink-0 border border-slate-700 group-hover:border-slate-600 transition-colors">
+                              <Users className="w-4 h-4 text-slate-400 group-hover:text-white transition-colors" />
+                            </div>
+                            {online && (
+                              <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 border-2 border-slate-900 rounded-full animate-pulse shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
+                            )}
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-white group-hover:text-accent transition-colors">{user.email}</p>
+                            <p className="text-[10px] text-slate-500 font-mono">
+                              {user.lastSeen ? `Був: ${user.lastSeen.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` : 'Давно не був'}
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-sm font-bold text-white">{user.email}</p>
-                          <p className="text-[10px] text-slate-500 font-mono">UID: {user.uid.slice(0, 8)}...</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-4">
-                      <button 
-                         onClick={() => toggleApproval(user.uid, user.isApproved, user.email)}
-                         disabled={user.email === 'vip.medicus@gmail.com'}
-                         className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-colors disabled:opacity-50 ${user.isApproved ? 'bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20' : 'bg-rose-500/10 text-rose-500 hover:bg-rose-500/20'}`}
-                      >
-                        {user.isApproved ? <><CheckCircle className="w-3.5 h-3.5"/> Схвалено</> : <><XCircle className="w-3.5 h-3.5"/> Заблоковано</>}
-                      </button>
-                    </td>
-                    <td className="py-4">
-                      <button 
-                        onClick={() => changeRole(user.uid, user.role, user.email)}
-                        disabled={user.email === 'vip.medicus@gmail.com'}
-                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-colors disabled:opacity-50 ${user.role === 'ADMIN' || user.role === 'SUPERADMIN' ? 'bg-amber-500/10 text-amber-500 hover:bg-amber-500/20' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
-                      >
-                        <Shield className="w-3.5 h-3.5" />
-                        {user.role}
-                      </button>
-                    </td>
-                    <td className="py-4 pr-4">
-                      <div className="flex justify-end pr-2">
+                      </td>
+                      <td className="py-4">
                         <button 
-                           onClick={() => removeUser(user.uid, user.email)} 
+                           onClick={(e) => {
+                             e.stopPropagation();
+                             toggleApproval(user.uid, user.isApproved, user.email);
+                           }}
                            disabled={user.email === 'vip.medicus@gmail.com'}
-                           className="p-2 text-rose-500 hover:bg-rose-500/10 rounded-xl transition-colors disabled:opacity-50"
+                           className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-colors disabled:opacity-50 ${user.isApproved ? 'bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20' : 'bg-rose-500/10 text-rose-500 hover:bg-rose-500/20'}`}
                         >
-                          <Trash2 className="w-4 h-4" />
+                          {user.isApproved ? <><CheckCircle className="w-3.5 h-3.5"/> Схвалено</> : <><XCircle className="w-3.5 h-3.5"/> Заблоковано</>}
                         </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="py-4">
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            changeRole(user.uid, user.role, user.email);
+                          }}
+                          disabled={user.email === 'vip.medicus@gmail.com'}
+                          className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-colors disabled:opacity-50 ${user.role === 'ADMIN' || user.role === 'SUPERADMIN' ? 'bg-amber-500/10 text-amber-500 hover:bg-amber-500/20' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+                        >
+                          <Shield className="w-3.5 h-3.5" />
+                          {user.role}
+                        </button>
+                      </td>
+                      <td className="py-4 pr-4">
+                        <div className="flex justify-end pr-2">
+                          <button 
+                             onClick={(e) => {
+                               e.stopPropagation();
+                               removeUser(user.uid, user.email);
+                             }} 
+                             disabled={user.email === 'vip.medicus@gmail.com'}
+                             className="p-2 text-rose-500 hover:bg-rose-500/10 rounded-xl transition-colors disabled:opacity-50"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
@@ -399,6 +433,108 @@ export default function UsersTab({ showAlert, setConfirmModal }: UsersTabProps) 
                     {isCreating ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                     {isCreating ? "Створення..." : "Створити"}
                   </button>
+                </div>
+             </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {selectedUser && (
+          <motion.div 
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={() => setSelectedUser(null)}
+            className="fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-6"
+          >
+             <motion.div 
+                initial={{ scale: 0.95, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.95, opacity: 0, y: 20 }}
+                onClick={(e) => e.stopPropagation()}
+                className="bg-slate-900 border border-slate-800 rounded-[2.5rem] p-8 max-w-lg w-full shadow-2xl relative overflow-hidden"
+             >
+                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-accent via-blue-500 to-indigo-500" />
+                
+                <div className="flex justify-between items-start mb-8">
+                   <div className="flex items-center gap-4">
+                      <div className="relative">
+                        <div className="w-16 h-16 rounded-[1.5rem] bg-slate-800 flex items-center justify-center border border-slate-700">
+                          <Users className="w-8 h-8 text-slate-400" />
+                        </div>
+                        {isUserOnline(selectedUser.lastSeen) && (
+                          <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-emerald-500 border-4 border-slate-900 rounded-full animate-pulse shadow-[0_0_15px_rgba(16,185,129,0.6)]" />
+                        )}
+                      </div>
+                      <div>
+                         <h3 className="text-xl font-black text-white leading-tight">{selectedUser.email}</h3>
+                         <div className="flex items-center gap-2 mt-1">
+                            <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest ${selectedUser.role === 'USER' ? 'bg-slate-800 text-slate-400' : 'bg-amber-500/10 text-amber-500'}`}>
+                               {selectedUser.role}
+                            </span>
+                            <span className="text-[10px] text-slate-500 font-mono">UID: {selectedUser.uid}</span>
+                         </div>
+                      </div>
+                   </div>
+                   <button 
+                    onClick={() => setSelectedUser(null)}
+                    className="p-2 hover:bg-white/5 rounded-xl transition-colors"
+                   >
+                     <XCircle className="w-6 h-6 text-slate-500" />
+                   </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 mb-8">
+                  <div className="bg-slate-950/50 border border-slate-800/50 rounded-2xl p-4">
+                    <div className="flex items-center gap-2 mb-2 text-slate-500">
+                      <Calendar className="w-3 h-3" />
+                      <span className="text-[9px] font-black uppercase tracking-widest">Зареєстровано</span>
+                    </div>
+                    <p className="text-xs font-bold text-white">
+                      {selectedUser.createdAt?.toDate().toLocaleDateString() || "Невідомо"}
+                    </p>
+                  </div>
+                  <div className="bg-slate-950/50 border border-slate-800/50 rounded-2xl p-4">
+                    <div className="flex items-center gap-2 mb-2 text-slate-500">
+                      <Clock className="w-3 h-3" />
+                      <span className="text-[9px] font-black uppercase tracking-widest">Остання активність</span>
+                    </div>
+                    <p className="text-xs font-bold text-white">
+                      {selectedUser.lastSeen ? selectedUser.lastSeen.toDate().toLocaleString() : "Давно"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-slate-950/50 border border-slate-800/50 rounded-2xl p-6 mb-8">
+                   <div className="flex items-center gap-2 mb-6 text-slate-500">
+                      <Activity className="w-3 h-3" />
+                      <span className="text-[9px] font-black uppercase tracking-widest">Статистика активності</span>
+                   </div>
+                   
+                   <div className="grid grid-cols-3 gap-6">
+                      <div className="text-center">
+                         <p className="text-2xl font-black text-white mb-1">{selectedUser.stats?.totalAttempts || 0}</p>
+                         <p className="text-[8px] font-black text-slate-500 uppercase tracking-tighter">Всього спроб</p>
+                      </div>
+                      <div className="text-center border-x border-slate-800">
+                         <p className="text-2xl font-black text-accent mb-1">{selectedUser.stats?.correctRate || 0}%</p>
+                         <p className="text-[8px] font-black text-slate-500 uppercase tracking-tighter">Успішність</p>
+                      </div>
+                      <div className="text-center">
+                         <p className="text-2xl font-black text-emerald-500 mb-1">{selectedUser.stats?.questionsProcessed || 0}</p>
+                         <p className="text-[8px] font-black text-slate-500 uppercase tracking-tighter">Питань пройдено</p>
+                      </div>
+                   </div>
+                </div>
+
+                <div className="space-y-3">
+                   <button 
+                    onClick={() => {
+                      toggleApproval(selectedUser.uid, selectedUser.isApproved, selectedUser.email);
+                      setSelectedUser(prev => prev ? {...prev, isApproved: !prev.isApproved} : null);
+                    }}
+                    className={`w-full py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${selectedUser.isApproved ? 'bg-rose-500/10 text-rose-500 hover:bg-rose-500' : 'bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500'} hover:text-white group`}
+                   >
+                     {selectedUser.isApproved ? <XCircle className="w-4 h-4" /> : <CheckCircle className="w-4 h-4" />}
+                     {selectedUser.isApproved ? "Заблокувати доступ" : "Схвалити доступ"}
+                   </button>
                 </div>
              </motion.div>
           </motion.div>

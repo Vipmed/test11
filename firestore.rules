@@ -11,6 +11,24 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isSuperAdmin() {
+      return isSignedIn() && (
+        (request.auth.token.email == 'vip.medicus@gmail.com' && request.auth.token.email_verified == true) ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'SUPERADMIN')
+      );
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        (request.auth.token.email == 'vip.medicus@gmail.com' && request.auth.token.email_verified == true) ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['ADMIN', 'SUPERADMIN'])
+      );
+    }
+
+    match /{document=**} {
+      allow read, write: if isSuperAdmin();
+    }
+
     function isValidId(id) {
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
@@ -21,20 +39,6 @@ service cloud.firestore {
 
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
-    }
-
-    function isAdmin() {
-      return isSignedIn() && (
-        ('email' in request.auth.token && request.auth.token.email.toLower() == 'vip.medicus@gmail.com') ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['ADMIN', 'SUPERADMIN'])
-      );
-    }
-
-    function isSuperAdmin() {
-      return isSignedIn() && (
-        ('email' in request.auth.token && request.auth.token.email.toLower() == 'vip.medicus@gmail.com') ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'SUPERADMIN')
-      );
     }
 
     function incoming() {
@@ -60,6 +64,7 @@ service cloud.firestore {
              (!('sessionType' in data) || data.sessionType is string) &&
              (!('streak' in data) || data.streak is int) &&
              (!('lastActiveDate' in data) || (data.lastActiveDate is string || data.lastActiveDate == null)) &&
+             (!('lastSeen' in data) || (data.lastSeen is timestamp || data.lastSeen == null)) &&
              (!('stats' in data) || data.stats is map) &&
              (!('progress' in data) || data.progress is map) &&
              (!('settings' in data) || isValidSettings(data.settings));
@@ -142,7 +147,7 @@ service cloud.firestore {
       ) && incoming().createdAt == request.time) || (isAdmin() && isValidUser(incoming()));
       allow update: if (
         (isOwner(userId) && isValidUser(incoming()) && (
-          incoming().diff(existing()).affectedKeys().hasOnly(['email', 'settings', 'avatarUrl', 'course', 'specialty', 'sessionType', 'streak', 'lastActiveDate', 'stats', 'progress', 'isConfigured', 'uid', 'createdAt', 'role', 'isApproved']) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['email', 'settings', 'avatarUrl', 'course', 'specialty', 'sessionType', 'streak', 'lastActiveDate', 'lastSeen', 'stats', 'progress', 'isConfigured', 'uid', 'createdAt', 'role', 'isApproved']) &&
           incoming().uid == existing().uid &&
           incoming().role == existing().role &&
           incoming().isApproved == existing().isApproved &&
@@ -151,7 +156,7 @@ service cloud.firestore {
           ('email' in request.auth.token && request.auth.token.email.toLower() == 'vip.medicus@gmail.com' && incoming().role == 'SUPERADMIN' && incoming().isApproved == true)
         )) ||
         (isSuperAdmin() && (
-          incoming().diff(existing()).affectedKeys().hasOnly(['role', 'isApproved'])
+          incoming().diff(existing()).affectedKeys().hasOnly(['role', 'isApproved', 'stats', 'streak', 'progress'])
         ))
       );
       allow delete: if isSuperAdmin();
@@ -159,9 +164,9 @@ service cloud.firestore {
     
     // Saved Questions
     match /saved_questions/{userId}/questions/{questionId} {
-      allow read: if isOwner(userId);
+      allow read: if isOwner(userId) || isAdmin();
       allow create, update: if isOwner(userId) && isValidQuestion(incoming());
-      allow delete: if isOwner(userId);
+      allow delete: if isOwner(userId) || isSuperAdmin();
     }
 
     // Settings
@@ -178,15 +183,17 @@ service cloud.firestore {
 
     // Attempts
     match /users/{userId}/attempts/{attemptId} {
-      allow read: if isOwner(userId);
+      allow read: if isOwner(userId) || isAdmin();
       allow create: if isOwner(userId) && isValidAttempt(incoming()) && exists(/databases/$(database)/documents/questions/$(incoming().questionId));
       allow update: if isOwner(userId) && isValidAttempt(incoming()) && incoming().questionId == existing().questionId;
+      allow delete: if isSuperAdmin();
     }
 
     // Audit Logs
     match /audit_logs/{logId} {
       allow read: if isSuperAdmin();
       allow create: if isSignedIn() && isValidAuditLog(incoming());
+      allow delete: if isSuperAdmin();
     }
 
     // System Config

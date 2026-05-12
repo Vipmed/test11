@@ -17,7 +17,8 @@ import Sidebar from "./components/Sidebar";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 
 import { XCircle, Menu } from "lucide-react";
-import { auth } from "@/src/lib/firebase";
+import { auth, db } from "@/src/lib/firebase";
+import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { motion, AnimatePresence } from "motion/react";
 
 function AuthenticatedApp() {
@@ -25,6 +26,26 @@ function AuthenticatedApp() {
   const location = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const isAuthenticated = !!user;
+
+  // Presence Tracking
+  useEffect(() => {
+    if (!user) return;
+
+    const updatePresence = async () => {
+      try {
+        const userDoc = doc(db, "users", user.uid);
+        await updateDoc(userDoc, {
+          lastSeen: serverTimestamp()
+        });
+      } catch (err) {
+        console.warn("Presence failed:", err);
+      }
+    };
+
+    updatePresence();
+    const interval = setInterval(updatePresence, 120000); // 2 minutes
+    return () => clearInterval(interval);
+  }, [user]);
 
   useEffect(() => {
     setIsSidebarOpen(false);

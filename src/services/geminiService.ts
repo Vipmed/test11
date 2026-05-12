@@ -1,42 +1,20 @@
-import { GoogleGenAI } from "@google/genai";
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
 export async function explainQuestion(questionText: string, correctAnswer: string) {
-  try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: `You are a medical expert from TNMU. Explain this KROK medical question in Ukrainian.
-      Question: ${questionText}
-      Correct Answer: ${correctAnswer}
-      
-      Provide:
-      1. A brief explanation of why the answer is correct (2-3 sentences).
-      2. A "Key Word" for quick memorization.
-      3. A "Mnemonic" (mental trick) to remember this specific relationship.
-      
-      Output JSON format:
-      {
-        "explanation": "...",
-        "keyword": "...",
-        "mnemonic": "..."
-      }`,
-      config: {
-        responseMimeType: "application/json"
-      }
-    });
+  // AI Stub as requested
+  console.log("AI Explain called (Stub Mode):", { questionText, correctAnswer });
+  
+  // Simulate network delay
+  await new Promise(resolve => setTimeout(resolve, 800));
 
-    return JSON.parse(response.text);
-  } catch (error) {
-    console.error("AI Explain Error:", error);
-    return {
-      explanation: "Пояснення тимчасово недоступне. Перевірте з'єднання з AI.",
-      keyword: "Error",
-      mnemonic: "N/A"
-    };
-  }
+  return {
+    explanation: "Це пояснення згенероване системою (режим заглушки). У цій версії платформи реальний ШІ тимчасово відключений для економії ресурсів. Зазвичай тут описується патофізіологія, клініка та обґрунтування вибору правильної відповіді.",
+    keyword: "Ключове слово Побудова",
+    mnemonic: "Заглушка: AI в цій версії вимкнено"
+  };
 }
 
 export async function generateMnemonics(topic: string) {
-   // Similar logic to above
+  console.log("Generate Mnemonics called (Stub Mode):", topic);
+  return {
+    mnemonic: "Заглушка для мнемоніки по темі: " + topic
+  };
 }

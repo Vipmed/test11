@@ -3,6 +3,8 @@ import { db } from "@/src/lib/firebase";
 import { collection, query, getDocs, updateDoc, doc, deleteDoc, orderBy, where, limit } from "firebase/firestore";
 import { FileText, CheckCircle, Edit3, Trash2 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import { logEvent, AuditEventType } from "@/src/lib/audit";
+import { auth } from "@/src/lib/firebase";
 
 interface ReportsTabProps {
   showAlert: (msg: string) => void;
@@ -55,6 +57,12 @@ export default function ReportsTab({ showAlert, setConfirmModal }: ReportsTabPro
           options: inspectingQuestion.options,
           correctIdx: inspectingQuestion.correctIdx
        });
+       await logEvent(
+         AuditEventType.QUESTION_EDIT,
+         `Оновлено питання (через скаргу) ID: ${inspectingQuestion.docId}`,
+         auth.currentUser?.uid,
+         auth.currentUser?.email || undefined
+       );
        showAlert("Питання успішно оновлено!");
     } catch(err) {
        console.error(err);
@@ -68,6 +76,12 @@ export default function ReportsTab({ showAlert, setConfirmModal }: ReportsTabPro
       onConfirm: async () => {
         try {
           await deleteDoc(doc(db, "reports", id));
+          await logEvent(
+            AuditEventType.REPORT_ACTION,
+            `Звіт розглянуто та видалено ID: ${id}`,
+            auth.currentUser?.uid,
+            auth.currentUser?.email || undefined
+          );
           fetchReports();
           if(inspectingReport?.id === id) {
              setInspectingReport(null);

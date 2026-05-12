@@ -111,7 +111,7 @@ export default function TestBase() {
   }, [selectedSubjects]);
 
   const handleChangeContext = async (data: any) => {
-    await updateProfile(data);
+    await updateProfile({ ...data, isConfigured: true });
     setShowChangeContext(false);
   };
 

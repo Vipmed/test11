@@ -1,8 +1,10 @@
 import React, { useState } from "react";
-import { Lock, Mail, ChevronRight, LogIn, AlertCircle, XCircle } from "lucide-react";
+import { Lock, Mail, ChevronRight, LogIn, AlertCircle, XCircle, GraduationCap, Stethoscope, Snowflake, Sun } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
-import { auth } from "@/src/lib/firebase";
+import { auth, db } from "@/src/lib/firebase";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { cn } from "@/src/lib/utils";
 
 import { logEvent, AuditEventType } from "@/src/lib/audit";
 
@@ -13,6 +15,11 @@ export default function Login() {
   const [isRegistering, setIsRegistering] = useState(false);
   const [error, setError] = useState("");
   const [infoModal, setInfoModal] = useState<{title: string, content: string} | null>(null);
+
+  // Registration specifics
+  const [course, setCourse] = useState("1");
+  const [specialty, setSpecialty] = useState("med");
+  const [sessionType, setSessionType] = useState("summer");
 
   const handleGoogleLogin = async () => {
     setLoading(true);
@@ -39,6 +46,31 @@ export default function Login() {
         const result = await createUserWithEmailAndPassword(auth, email, password);
         if (result.user) {
           logEvent(AuditEventType.USER_LOGIN, `Registered with email: ${result.user.email}`, result.user.uid, result.user.email || undefined);
+          
+          // Pre-configure profile since we asked in registration
+          const userDocRef = doc(db, 'users', result.user.uid);
+          await setDoc(userDocRef, {
+            uid: result.user.uid,
+            email: result.user.email,
+            role: 'USER',
+            isApproved: false,
+            createdAt: serverTimestamp(),
+            course,
+            specialty,
+            sessionType,
+            isConfigured: true,
+            settings: { 
+              aiByDefault: false, 
+              theme: 'dark', 
+              showSidebarCloseBtn: true,
+              sidebarEnabled: true
+            },
+            stats: {
+              totalSolved: 0,
+              totalCorrect: 0,
+              totalQuestions: 2000
+            }
+          }, { merge: true });
         }
       } else {
         const result = await signInWithEmailAndPassword(auth, email, password);
@@ -111,6 +143,62 @@ export default function Login() {
               />
             </div>
           </div>
+
+          <AnimatePresence>
+            {isRegistering && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="space-y-3 pt-2 overflow-hidden"
+              >
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Курс</label>
+                  <div className="grid grid-cols-3 gap-1">
+                    {[1, 2, 3, 4, 5, 6].map(c => (
+                      <button 
+                        key={c}
+                        type="button"
+                        onClick={() => setCourse(c.toString())}
+                        className={cn(
+                          "py-2 rounded-lg text-[10px] font-bold transition-all border",
+                          course === c.toString() ? "bg-accent border-accent text-white" : "bg-slate-900 border-slate-800 text-slate-500"
+                        )}
+                      >
+                        {c} Курс
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Спеціальність</label>
+                    <select 
+                      value={specialty}
+                      onChange={(e) => setSpecialty(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl py-2 px-3 text-[10px] text-white font-bold outline-none focus:border-accent"
+                    >
+                      <option value="med">Медицина</option>
+                      <option value="dent">Стоматологія</option>
+                      <option value="pharm">Фармація</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Сесія</label>
+                    <select 
+                      value={sessionType}
+                      onChange={(e) => setSessionType(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl py-2 px-3 text-[10px] text-white font-bold outline-none focus:border-accent"
+                    >
+                      <option value="winter">Зимова</option>
+                      <option value="summer">Літня</option>
+                    </select>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
           
           {error && (
             <div className="flex items-center gap-2 text-xs text-red-500 bg-red-500/10 p-3 rounded-xl border border-red-500/20">

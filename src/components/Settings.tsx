@@ -186,7 +186,7 @@ export default function Settings() {
                       <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Курс</label>
                       <select 
                         value={profile?.course || ""}
-                        onChange={(e) => updateProfile({ course: e.target.value })}
+                        onChange={(e) => updateProfile({ course: e.target.value, isConfigured: true })}
                         className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 px-4 text-sm text-white font-bold outline-none focus:border-accent"
                       >
                         {[1, 2, 3, 4, 5, 6].map(c => <option key={c} value={c}>{c} Курс</option>)}
@@ -197,7 +197,7 @@ export default function Settings() {
                       <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Спеціальність</label>
                       <select 
                         value={profile?.specialty || ""}
-                        onChange={(e) => updateProfile({ specialty: e.target.value })}
+                        onChange={(e) => updateProfile({ specialty: e.target.value, isConfigured: true })}
                         className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 px-4 text-sm text-white font-bold outline-none focus:border-accent"
                       >
                         <option value="med">Медицина</option>
@@ -210,7 +210,7 @@ export default function Settings() {
                       <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Сесія</label>
                       <select 
                         value={profile?.sessionType || ""}
-                        onChange={(e) => updateProfile({ sessionType: e.target.value })}
+                        onChange={(e) => updateProfile({ sessionType: e.target.value, isConfigured: true })}
                         className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 px-4 text-sm text-white font-bold outline-none focus:border-accent"
                       >
                         <option value="winter">Зимова</option>

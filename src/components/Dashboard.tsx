@@ -12,9 +12,15 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [onboardingStep, setOnboardingStep] = useState(1);
   const [onboardingData, setOnboardingData] = useState<any>({});
-  const [showOnboarding, setShowOnboarding] = useState(!profile?.course);
+  const [showOnboarding, setShowOnboarding] = useState(profile && !profile.isConfigured);
   const [bases, setBases] = useState<any[]>([]);
   const [errorCount, setErrorCount] = useState(0);
+
+  useEffect(() => {
+    if (profile && !profile.isConfigured) {
+      setShowOnboarding(true);
+    }
+  }, [profile?.isConfigured]);
 
   useEffect(() => {
     const fetchBases = async () => {
@@ -50,9 +56,15 @@ export default function Dashboard() {
     if (onboardingStep < 3) {
       setOnboardingStep(prev => prev + 1);
     } else {
-      await updateProfile(newData);
+      const finalData = { ...newData, isConfigured: true };
+      await updateProfile(finalData);
       setShowOnboarding(false);
     }
+  };
+
+  const skipOnboarding = async () => {
+    await updateProfile({ isConfigured: true });
+    setShowOnboarding(false);
   };
 
   return (
@@ -142,7 +154,7 @@ export default function Dashboard() {
                     ))}
                   </div>
                   <button 
-                    onClick={() => setShowOnboarding(false)}
+                    onClick={skipOnboarding}
                     className="text-[10px] font-black text-[var(--muted)] uppercase tracking-widest hover:text-[var(--text-bold)] transition-colors"
                   >
                     Пропустити

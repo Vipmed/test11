@@ -3,6 +3,7 @@ import { auth, db, handleFirestoreError, OperationType } from "@/src/lib/firebas
 import { collection, query, getDocs, updateDoc, doc, addDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 import { Shield, Users, CheckCircle, XCircle, Plus, Search, Trash2, Copy, Check } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import { logEvent, AuditEventType } from "@/src/lib/audit";
 
 export interface UserProfile {
   uid: string;
@@ -24,10 +25,18 @@ export default function UsersTab({ showAlert, setConfirmModal }: UsersTabProps) 
   const [showAddModal, setShowAddModal] = useState(false);
   const [newUser, setNewUser] = useState({ email: "", role: "USER" });
   const [generatedCreds, setGeneratedCreds] = useState<{login: string, pass: string} | null>(null);
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
 
   useEffect(() => {
     fetchUsers();
   }, []);
+
+  const copyToClipboard = (text: string, type: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopyStatus(type);
+      setTimeout(() => setCopyStatus(null), 2000);
+    });
+  };
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -56,11 +65,18 @@ export default function UsersTab({ showAlert, setConfirmModal }: UsersTabProps) 
       onConfirm: async () => {
         try {
           await deleteDoc(doc(db, "users", uid));
+          await logEvent(
+            AuditEventType.USER_DELETED, 
+            `Користувача видалено: ${userEmail} (UID: ${uid})`,
+            auth.currentUser?.uid,
+            auth.currentUser?.email || undefined
+          );
           fetchUsers();
           setConfirmModal(null);
         } catch (error) {
           setConfirmModal(null);
-          showAlert("Помилка видалення.");
+          handleFirestoreError(error, OperationType.DELETE, `users/${uid}`);
+          showAlert("Помилка видалення. Перевірте консоль.");
         }
       }
     });
@@ -70,8 +86,15 @@ export default function UsersTab({ showAlert, setConfirmModal }: UsersTabProps) 
     try {
       if (userEmail === 'vip.medicus@gmail.com') return; // root admin
       await updateDoc(doc(db, "users", uid), { isApproved: !currentStatus });
+      await logEvent(
+        currentStatus ? AuditEventType.USER_BLOCKED : AuditEventType.USER_APPROVED,
+        `${currentStatus ? "Заблоковано" : "Схвалено"} користувача: ${userEmail} (UID: ${uid})`,
+        auth.currentUser?.uid,
+        auth.currentUser?.email || undefined
+      );
       fetchUsers();
     } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `users/${uid}`);
       showAlert("Помилка оновлення статусу.");
     }
   };
@@ -81,15 +104,25 @@ export default function UsersTab({ showAlert, setConfirmModal }: UsersTabProps) 
       if (userEmail === 'vip.medicus@gmail.com') return; // root admin
       const nextRole = currentRole === 'USER' ? 'ADMIN' : (currentRole === 'ADMIN' ? 'SUPERADMIN' : 'USER');
       await updateDoc(doc(db, "users", uid), { role: nextRole });
+      await logEvent(
+        AuditEventType.USER_ROLE_CHANGE,
+        `Змінено роль для ${userEmail} на ${nextRole}`,
+        auth.currentUser?.uid,
+        auth.currentUser?.email || undefined
+      );
       fetchUsers();
     } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `users/${uid}`);
       showAlert("Помилка оновлення ролі.");
     }
   };
 
   const generateCredentials = () => {
+    const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+    const login = newUser.email || `med_user_${randomSuffix}`;
     const pass = Math.random().toString(36).slice(-8) + "!";
-    setGeneratedCreds({ login: newUser.email, pass });
+    setGeneratedCreds({ login, pass });
+    setNewUser(prev => ({ ...prev, email: login }));
   };
 
   const handleCreateUser = async () => {
@@ -101,7 +134,15 @@ export default function UsersTab({ showAlert, setConfirmModal }: UsersTabProps) 
         isApproved: true,
         createdAt: serverTimestamp(),
       });
+      await logEvent(
+        AuditEventType.USER_CREATED,
+        `Створено нового користувача: ${newUser.email} з роллю ${newUser.role}`,
+        auth.currentUser?.uid,
+        auth.currentUser?.email || undefined
+      );
       setShowAddModal(false);
+      setGeneratedCreds(null);
+      setNewUser({ email: "", role: "USER" });
       fetchUsers();
     } catch (error) {
        handleFirestoreError(error, OperationType.WRITE, "users");
@@ -127,7 +168,11 @@ export default function UsersTab({ showAlert, setConfirmModal }: UsersTabProps) 
           
           <div className="flex items-center gap-3 w-full md:w-auto">
             <button 
-              onClick={() => setShowAddModal(true)}
+              onClick={() => {
+                setNewUser({ email: "", role: "USER" });
+                setGeneratedCreds(null);
+                setShowAddModal(true);
+              }}
               className="px-5 py-3 bg-accent text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-600 transition-all shadow-lg shadow-accent/20 flex items-center gap-2"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -177,7 +222,7 @@ export default function UsersTab({ showAlert, setConfirmModal }: UsersTabProps) 
                          disabled={user.email === 'vip.medicus@gmail.com'}
                          className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-colors disabled:opacity-50 ${user.isApproved ? 'bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20' : 'bg-rose-500/10 text-rose-500 hover:bg-rose-500/20'}`}
                       >
-                        {user.isApproved ? <><CheckCircle className="w-3.5 h-3.5"/> Approved</> : <><XCircle className="w-3.5 h-3.5"/> Blocked</>}
+                        {user.isApproved ? <><CheckCircle className="w-3.5 h-3.5"/> Схвалено</> : <><XCircle className="w-3.5 h-3.5"/> Заблоковано</>}
                       </button>
                     </td>
                     <td className="py-4">
@@ -222,20 +267,58 @@ export default function UsersTab({ showAlert, setConfirmModal }: UsersTabProps) 
                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-accent to-blue-400" />
                 <h3 className="text-xl font-black text-white mb-2">Додати користувача</h3>
                 <p className="text-xs text-slate-400 mb-6 font-mono leading-relaxed">
-                   Новий користувач отримає доступ до системи. Рекомендуємо спочатку згенерувати тимчасовий пароль.
+                   Згенеруйте логін та пароль для користувача. Логін можна змінити на email пізніше.
                 </p>
 
                 <div className="space-y-4">
                    <div>
-                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Email користувача</label>
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">Логін (або Email)</label>
                       <input 
-                         type="email" 
+                         type="text" 
                          value={newUser.email}
-                         onChange={(e) => setNewUser({...newUser, email: e.target.value})}
+                         onChange={(e) => {
+                            setNewUser({...newUser, email: e.target.value});
+                            if (generatedCreds) setGeneratedCreds({...generatedCreds, login: e.target.value});
+                         }}
                          className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-accent"
-                         placeholder="student@tnmu.edu.ua"
+                         placeholder="med_user_1234 або email"
                       />
                    </div>
+
+                   {generatedCreds && (
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center px-1">
+                          <label className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Дані для копіювання</label>
+                          <button 
+                            onClick={() => copyToClipboard(`Логін: ${newUser.email}\nПароль: ${generatedCreds.pass}`, 'all')}
+                            className="text-accent hover:text-blue-400 transition-colors flex items-center gap-1"
+                          >
+                            {copyStatus === 'all' ? <Check className="w-3 h-3"/> : <Copy className="w-3 h-3"/>}
+                            <span className="text-[8px] font-black uppercase tracking-widest">{copyStatus === 'all' ? 'Скопійовано' : 'Копіювати все'}</span>
+                          </button>
+                        </div>
+                        
+                        <div 
+                          onClick={() => copyToClipboard(`Логін: ${newUser.email}\nПароль: ${generatedCreds.pass}`, 'all')}
+                          className="w-full bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-4 cursor-pointer group hover:bg-emerald-500/20 transition-all relative"
+                        >
+                          <div className="space-y-2 font-mono text-sm">
+                            <div className="flex justify-between items-center text-white/50 text-[10px] uppercase">
+                              <span>Логін</span>
+                              <span className="text-emerald-500 font-black">{newUser.email}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-white/50 text-[10px] uppercase">
+                              <span>Пароль</span>
+                              <span className="text-emerald-500 font-black">{generatedCreds.pass}</span>
+                            </div>
+                          </div>
+                          <div className="mt-3 pt-3 border-t border-emerald-500/20 text-center">
+                             <span className="text-[9px] font-black text-emerald-500/50 uppercase tracking-widest group-hover:text-emerald-500 transition-colors">Натисніть, щоб скопіювати все разом</span>
+                          </div>
+                        </div>
+                      </div>
+                   )}
+
                    <div>
                       <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Роль у системі</label>
                       <select 
@@ -248,22 +331,14 @@ export default function UsersTab({ showAlert, setConfirmModal }: UsersTabProps) 
                       </select>
                    </div>
                    
-                   {!generatedCreds ? (
+                   {!generatedCreds && (
                       <button 
                          onClick={generateCredentials}
-                         className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-colors flex items-center justify-center gap-2"
+                         className="w-full py-4 bg-slate-800 hover:bg-slate-700 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-colors flex items-center justify-center gap-2"
                       >
-                         <Shield className="w-3.5 h-3.5" />
+                         <Shield className="w-4 h-4" />
                          Згенерувати доступ
                       </button>
-                   ) : (
-                      <div className="bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-2xl">
-                         <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mb-2">Дані для входу (скопіюйте!)</p>
-                         <div className="space-y-1 font-mono text-xs text-white">
-                            <p>Логін: {generatedCreds.login}</p>
-                            <p>Пароль: {generatedCreds.pass}</p>
-                         </div>
-                      </div>
                    )}
                 </div>
 
@@ -276,7 +351,8 @@ export default function UsersTab({ showAlert, setConfirmModal }: UsersTabProps) 
                   </button>
                   <button 
                     onClick={handleCreateUser}
-                    className="flex-1 py-4 bg-accent hover:bg-blue-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-colors shadow-lg shadow-accent/20"
+                    disabled={!newUser.email}
+                    className="flex-1 py-4 bg-accent hover:bg-blue-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-colors shadow-lg shadow-accent/20 disabled:opacity-50 disabled:hover:bg-accent"
                   >
                     Створити
                   </button>

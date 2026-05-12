@@ -78,7 +78,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 stats: data.stats || defaultStats,
                 course: data.course || '1',
                 specialty: data.specialty || 'med',
-                sessionType: data.sessionType || 'summer'
+                sessionType: data.sessionType || 'summer',
+                isConfigured: data.isConfigured || false
               };
               await setDoc(userDocRef, updatedProfile, { merge: true });
               setProfile(updatedProfile);
@@ -90,7 +91,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 stats: data.stats || defaultStats,
                 course: data.course || '1',
                 specialty: data.specialty || 'med',
-                sessionType: data.sessionType || 'summer'
+                sessionType: data.sessionType || 'summer',
+                isConfigured: data.isConfigured || false
               });
             }
           } else {
@@ -107,7 +109,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               streak: 0,
               course: '1',
               specialty: 'med',
-              sessionType: 'summer'
+              sessionType: 'summer',
+              isConfigured: false
             };
             await setDoc(userDocRef, newProfile);
             setProfile(newProfile);

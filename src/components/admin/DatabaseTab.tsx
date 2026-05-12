@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import * as mammoth from "mammoth";
 import { parseOffice } from "officeparser";
-import { db } from "@/src/lib/firebase";
+import { db, auth } from "@/src/lib/firebase";
 import { collection, addDoc, doc, serverTimestamp, writeBatch, query, getDocs, updateDoc, deleteDoc, orderBy, where } from "firebase/firestore";
 import { Database, FileText, Plus, Trash2, Edit3, CheckCircle, XCircle, Upload, Loader2, Sparkles, Eye } from "lucide-react";
 
@@ -85,6 +85,12 @@ export default function DatabaseTab({ showAlert, setPromptModal, setPromptValue,
     try {
       const newStatus = (currentStatus === "Active" || !currentStatus) ? "Draft" : "Active";
       await updateDoc(doc(db, "bases", id), { status: newStatus });
+      await logEvent(
+        AuditEventType.SYSTEM_CONFIG_CHANGE,
+        `Змінено статус бази: ${id} на ${newStatus}`,
+        auth.currentUser?.uid,
+        auth.currentUser?.email || undefined
+      );
       fetchBases();
     } catch (error) {
       console.error(error);
@@ -117,6 +123,12 @@ export default function DatabaseTab({ showAlert, setPromptModal, setPromptValue,
          options: newOptions,
          correctIdx: newCorrectIdx
       });
+      await logEvent(
+        AuditEventType.QUESTION_EDIT,
+        `Оновлено питання ID: ${qId}`,
+        auth.currentUser?.uid,
+        auth.currentUser?.email || undefined
+      );
       setBaseQuestions(prev => prev.map(q => q.id === qId ? { ...q, text: newText, options: newOptions, correctIdx: newCorrectIdx } : q));
       showAlert("Питання збережено!");
     } catch(err) {
@@ -131,6 +143,12 @@ export default function DatabaseTab({ showAlert, setPromptModal, setPromptValue,
         onConfirm: async () => {
            try {
               await deleteDoc(doc(db, "questions", qId));
+              await logEvent(
+                AuditEventType.QUESTION_DELETE,
+                `Видалено питання ID: ${qId}`,
+                auth.currentUser?.uid,
+                auth.currentUser?.email || undefined
+              );
               setBaseQuestions(prev => prev.filter(q => q.id !== qId));
               showAlert("Питання видалено");
               setConfirmModal(null);
@@ -160,6 +178,12 @@ export default function DatabaseTab({ showAlert, setPromptModal, setPromptValue,
   const updateBaseMetadata = async (id: string, updates: any) => {
     try {
       await updateDoc(doc(db, "bases", id), updates);
+      await logEvent(
+        AuditEventType.SYSTEM_CONFIG_CHANGE,
+        `Оновлено метадані бази: ${id}. Зміни: ${JSON.stringify(updates)}`,
+        auth.currentUser?.uid,
+        auth.currentUser?.email || undefined
+      );
       fetchBases();
       setEditingMetadata(null);
       showAlert("Метадані оновлено!");

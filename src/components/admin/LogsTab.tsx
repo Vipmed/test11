@@ -81,18 +81,35 @@ export default function LogsTab() {
                   <td className="py-4 text-slate-400 px-4">{log.timestampStr}</td>
                   <td className="py-4">
                     <span className={`px-2 py-1 rounded inline-block text-[10px] uppercase font-bold ${
-                      log.event === 'USER_BLOCKED' ? 'bg-rose-500/10 text-rose-500' :
-                      log.event === 'DB_IMPORT' ? 'bg-accent/10 text-accent' :
+                      log.event === 'USER_BLOCKED' || log.event === 'USER_DELETED' ? 'bg-rose-500/10 text-rose-500' :
+                      log.event === 'DB_IMPORT' || log.event === 'USER_CREATED' ? 'bg-emerald-500/10 text-emerald-500' :
                       log.event === 'USER_LOGIN' ? 'bg-emerald-500/10 text-emerald-500' :
+                      log.event === 'DB_DELETE' || log.event === 'QUESTION_DELETE' ? 'bg-rose-500/10 text-rose-500' :
                       log.event === 'SAVED_QUESTION' ? 'bg-indigo-500/10 text-indigo-500' :
-                      log.event === 'REPORT_SUBMITTED' ? 'bg-amber-500/10 text-amber-500' :
+                      log.event === 'REPORT_SUBMITTED' || log.event === 'REPORT_ACTION' ? 'bg-amber-500/10 text-amber-500' :
+                      log.event === 'USER_APPROVED' || log.event === 'USER_ROLE_CHANGE' ? 'bg-blue-500/10 text-blue-500' :
+                      log.event === 'SYSTEM_CONFIG_CHANGE' || log.event === 'QUESTION_EDIT' ? 'bg-amber-500/10 text-amber-500' :
                       'bg-slate-800 text-slate-300'
                     }`}>
-                      {log.event}
+                      {log.event === 'USER_BLOCKED' ? 'БЛОКУВАННЯ' :
+                      log.event === 'USER_DELETED' ? 'ВИДАЛЕННЯ КОРИСТУВАЧА' :
+                      log.event === 'DB_IMPORT' ? 'ІМПОРТ БД' :
+                      log.event === 'USER_CREATED' ? 'СТВОРЕННЯ КОРИСТУВАЧА' :
+                      log.event === 'USER_LOGIN' ? 'ВХІД' :
+                      log.event === 'DB_DELETE' ? 'ВИДАЛЕННЯ БД' :
+                      log.event === 'QUESTION_DELETE' ? 'ВИДАЛЕННЯ ПИТАННЯ' :
+                      log.event === 'SAVED_QUESTION' ? 'ЗБЕРЕЖЕННЯ' :
+                      log.event === 'REPORT_SUBMITTED' ? 'СКАРГА' :
+                      log.event === 'REPORT_ACTION' ? 'ДІЯ ЗІ СКАРГОЮ' :
+                      log.event === 'USER_APPROVED' ? 'СХВАЛЕННЯ' :
+                      log.event === 'USER_ROLE_CHANGE' ? 'ЗМІНА РОЛІ' :
+                      log.event === 'SYSTEM_CONFIG_CHANGE' ? 'НАЛАШТУВАННЯ' :
+                      log.event === 'QUESTION_EDIT' ? 'РЕДАГУВАННЯ ПИТАННЯ' :
+                      log.event}
                     </span>
                   </td>
                   <td className="py-4 text-slate-300 truncate max-w-xs" title={log.detail}>{log.detail}</td>
-                  <td className="py-4 text-slate-400">{log.email || "System"}</td>
+                  <td className="py-4 text-slate-400">{log.email || "Система"}</td>
                   <td className="py-4 text-slate-500">{log.ip}</td>
                 </tr>
               ))}

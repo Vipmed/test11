@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { auth, db, handleFirestoreError, OperationType } from "@/src/lib/firebase";
-import { collection, query, getDocs, updateDoc, doc, addDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
-import { Shield, Users, CheckCircle, XCircle, Plus, Search, Trash2, Copy, Check } from "lucide-react";
+import { collection, query, getDocs, updateDoc, doc, addDoc, deleteDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import { initializeApp, getApp } from 'firebase/app';
+import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
+import firebaseConfig from '@/firebase-applet-config.json';
+import { Shield, Users, CheckCircle, XCircle, Plus, Search, Trash2, Copy, Check, Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { logEvent, AuditEventType } from "@/src/lib/audit";
 
@@ -21,6 +24,7 @@ interface UsersTabProps {
 export default function UsersTab({ showAlert, setConfirmModal }: UsersTabProps) {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isCreating, setIsCreating] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
   const [newUser, setNewUser] = useState({ email: "", role: "USER" });
@@ -126,26 +130,64 @@ export default function UsersTab({ showAlert, setConfirmModal }: UsersTabProps) 
   };
 
   const handleCreateUser = async () => {
+    if (isCreating) return;
+    setIsCreating(true);
     try {
-      if (!newUser.email) return;
-      await addDoc(collection(db, "users"), {
-        email: newUser.email,
+      if (!newUser.email || !generatedCreds) {
+        showAlert("Спочатку згенеруйте доступ.");
+        setIsCreating(false);
+        return;
+      }
+
+      // 1. Prepare email
+      const finalEmail = newUser.email.includes("@") ? newUser.email : `${newUser.email}@medicus.ua`;
+
+      // 2. Create in Firebase Auth using a dedicated secondary instance
+      let secondaryApp;
+      try {
+        secondaryApp = getApp("AdminAuthHelper");
+      } catch (e) {
+        secondaryApp = initializeApp(firebaseConfig, "AdminAuthHelper");
+      }
+      const secondaryAuth = getAuth(secondaryApp);
+      
+      const authResult = await createUserWithEmailAndPassword(secondaryAuth, finalEmail, generatedCreds.pass);
+      const uid = authResult.user.uid;
+      
+      // Cleanup the secondary auth session
+      await signOut(secondaryAuth);
+      
+      // 3. Create profile in Firestore with the same UID
+      await setDoc(doc(db, "users", uid), {
+        email: finalEmail,
         role: newUser.role,
         isApproved: true,
         createdAt: serverTimestamp(),
       });
+
       await logEvent(
         AuditEventType.USER_CREATED,
-        `Створено нового користувача: ${newUser.email} з роллю ${newUser.role}`,
+        `Створено нового користувача: ${finalEmail} з роллю ${newUser.role} (UID: ${uid})`,
         auth.currentUser?.uid,
         auth.currentUser?.email || undefined
       );
+
       setShowAddModal(false);
       setGeneratedCreds(null);
       setNewUser({ email: "", role: "USER" });
       fetchUsers();
-    } catch (error) {
-       handleFirestoreError(error, OperationType.WRITE, "users");
+      showAlert(`Користувача ${finalEmail} успішно створено!`);
+    } catch (error: any) {
+       console.error("User creation failed:", error);
+       if (error.code === 'auth/email-already-in-use') {
+         showAlert("Цей логін/email вже зайнятий.");
+       } else if (error.code === 'auth/weak-password') {
+         showAlert("Пароль занадто слабкий.");
+       } else {
+         handleFirestoreError(error, OperationType.WRITE, "users");
+       }
+    } finally {
+       setIsCreating(false);
     }
   };
 
@@ -351,10 +393,11 @@ export default function UsersTab({ showAlert, setConfirmModal }: UsersTabProps) 
                   </button>
                   <button 
                     onClick={handleCreateUser}
-                    disabled={!newUser.email}
-                    className="flex-1 py-4 bg-accent hover:bg-blue-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-colors shadow-lg shadow-accent/20 disabled:opacity-50 disabled:hover:bg-accent"
+                    disabled={!newUser.email || isCreating}
+                    className="flex-1 py-4 bg-accent hover:bg-blue-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-colors shadow-lg shadow-accent/20 disabled:opacity-50 disabled:hover:bg-accent flex items-center justify-center gap-2"
                   >
-                    Створити
+                    {isCreating ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    {isCreating ? "Створення..." : "Створити"}
                   </button>
                 </div>
              </motion.div>

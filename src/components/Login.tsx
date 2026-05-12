@@ -42,8 +42,13 @@ export default function Login() {
     setLoading(true);
     setError("");
     try {
+      let finalEmail = email;
+      if (!email.includes("@")) {
+        finalEmail = `${email}@medicus.ua`;
+      }
+
       if (isRegistering) {
-        const result = await createUserWithEmailAndPassword(auth, email, password);
+        const result = await createUserWithEmailAndPassword(auth, finalEmail, password);
         if (result.user) {
           logEvent(AuditEventType.USER_LOGIN, `Registered with email: ${result.user.email}`, result.user.uid, result.user.email || undefined);
           
@@ -73,7 +78,7 @@ export default function Login() {
           }, { merge: true });
         }
       } else {
-        const result = await signInWithEmailAndPassword(auth, email, password);
+        const result = await signInWithEmailAndPassword(auth, finalEmail, password);
         if (result.user) {
           logEvent(AuditEventType.USER_LOGIN, `Login with email: ${result.user.email}`, result.user.uid, result.user.email || undefined);
         }
@@ -123,8 +128,8 @@ export default function Login() {
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
               <input 
-                type="email" 
-                placeholder="Електронна пошта" 
+                type="text" 
+                placeholder="Логін або Email" 
                 className="w-full bg-slate-900 border border-slate-800 rounded-xl py-3 pl-10 text-sm text-white focus:outline-none focus:border-accent"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}

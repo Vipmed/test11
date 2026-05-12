@@ -1,13 +1,13 @@
-import React, { useEffect, useState } from "react";
-import { Crown, Loader2 } from "lucide-react";
+import { Crown, Loader2, Trash2, AlertTriangle } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { db } from "@/src/lib/firebase";
-import { doc, onSnapshot, updateDoc, setDoc, getDoc } from "firebase/firestore";
+import { doc, onSnapshot, updateDoc, setDoc, getDoc, collectionGroup, getDocs, writeBatch } from "firebase/firestore";
 import { logEvent, AuditEventType } from "@/src/lib/audit";
 
 export default function SystemTab() {
   const [config, setConfig] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [reseting, setReseting] = useState(false);
 
   useEffect(() => {
     const docRef = doc(db, "system", "config");
@@ -45,6 +45,45 @@ export default function SystemTab() {
     }
   };
 
+  const hardResetUserData = async () => {
+     if (!window.confirm("ОБЕРЕЖНО! Це видалить ВСІ збережені питання та ВСЮ статистику (спроби) ВСІХ користувачів. Бази залишаться. Ви впевнені?")) return;
+     
+     setReseting(true);
+     try {
+        // 1. Delete all saved questions (collection group 'questions' that are NOT in top-level '/questions')
+        const qGroup = collectionGroup(db, "questions");
+        const qSnap = await getDocs(qGroup);
+        const qDocs = qSnap.docs.filter(d => d.ref.path.includes("saved_questions"));
+        
+        let deletedCount = 0;
+        for (let i = 0; i < qDocs.length; i += 400) {
+           const batch = writeBatch(db);
+           qDocs.slice(i, i + 400).forEach(d => batch.delete(d.ref));
+           await batch.commit();
+           deletedCount += qDocs.slice(i, i + 400).length;
+        }
+
+        // 2. Delete all attempts
+        const aGroup = collectionGroup(db, "attempts");
+        const aSnap = await getDocs(aGroup);
+        const aDocs = aSnap.docs;
+        for (let i = 0; i < aDocs.length; i += 400) {
+           const batch = writeBatch(db);
+           aDocs.slice(i, i + 400).forEach(d => batch.delete(d.ref));
+           await batch.commit();
+           deletedCount += aDocs.slice(i, i + 400).length;
+        }
+
+        alert(`Очищення завершено. Видалено документів: ${deletedCount}`);
+        logEvent(AuditEventType.SYSTEM_CONFIG_CHANGE, "HARD RESET: Cleared all user data");
+     } catch (err) {
+        console.error(err);
+        alert("Помилка при очищенні.");
+     } finally {
+        setReseting(false);
+     }
+  };
+
   if (loading) {
      return (
         <div className="flex items-center justify-center py-20 lg:col-span-12">
@@ -60,8 +99,8 @@ export default function SystemTab() {
   ];
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 lg:col-span-12">
-        <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] p-8">
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        <div className="lg:col-span-6 bg-slate-900 border border-slate-800 rounded-[2.5rem] p-8">
             <h3 className="text-sm font-black text-white uppercase tracking-widest mb-6">Конфігурація</h3>
             <div className="space-y-4">
                 {settings.map((item, i) => (
@@ -88,15 +127,35 @@ export default function SystemTab() {
             </div>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] p-8 flex flex-col items-center justify-center text-center">
-            <Crown className="w-16 h-16 text-orange-500/20 mb-6" />
-            <h3 className="text-lg font-black text-white uppercase tracking-widest mb-2">Версія Системи 2.4-tnmu</h3>
-            <p className="text-xs text-slate-500 max-w-xs leading-relaxed mb-8">
-                Побудовано на AI-архітектурі для швидкої обробки баз тестів. Всі дані зашифровані.
-            </p>
-            <button className="px-8 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all">
-            Check for updates
-            </button>
+        <div className="lg:col-span-6 space-y-8">
+          <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] p-8 flex flex-col items-center justify-center text-center">
+              <Crown className="w-16 h-16 text-orange-500/20 mb-6" />
+              <h3 className="text-lg font-black text-white uppercase tracking-widest mb-2">Версія Системи 2.4-tnmu</h3>
+              <p className="text-xs text-slate-500 max-w-xs leading-relaxed mb-8">
+                  Побудовано на AI-архітектурі для швидкої обробки баз тестів. Всі дані зашифровані.
+              </p>
+              <button className="px-8 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all">
+              Check for updates
+              </button>
+          </div>
+
+          <div className="bg-rose-500/5 border border-rose-500/10 rounded-[2.5rem] p-8">
+              <div className="flex items-center gap-3 mb-4">
+                 <AlertTriangle className="w-5 h-5 text-rose-500" />
+                 <h3 className="text-sm font-black text-rose-500 uppercase tracking-widest">Небезпечна зона</h3>
+              </div>
+              <p className="text-[10px] text-slate-500 font-bold uppercase mb-6 leading-relaxed">
+                 Використовуйте ці інструменти тільки якщо хочете повністю скинути прогрес користувачів та їх збережені файли.
+              </p>
+              <button 
+                onClick={hardResetUserData}
+                disabled={reseting}
+                className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-rose-500/10 hover:bg-rose-500 text-rose-500 hover:text-white border border-rose-500/20 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
+              >
+                 {reseting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                 Очистити всі збереження та відповіді
+              </button>
+          </div>
         </div>
     </div>
   );

@@ -414,6 +414,15 @@ export default function TestScreen() {
       if (auth.currentUser && question.id) {
         const errorRef = doc(db, "saved_questions", auth.currentUser.uid, "questions", question.id);
         deleteDoc(errorRef).catch(err => console.error("Error removal failed:", err));
+        
+        // Also save a verified attempt for analytics
+        const attemptRef = collection(db, "users", auth.currentUser.uid, "attempts");
+        addDoc(attemptRef, {
+           questionId: question.id,
+           baseId: question.baseId,
+           isCorrect: true,
+           timestamp: serverTimestamp()
+        }).catch(err => console.error("Attempt save failed:", err));
       }
       
       if (aiEnabled) {
@@ -431,11 +440,21 @@ export default function TestScreen() {
       
       if (auth.currentUser && question.id) {
         const errorRef = doc(db, "saved_questions", auth.currentUser.uid, "questions", question.id);
+        const baseIdToUse = question.baseId || (subject.includes(',') ? subject.split(',')[0] : subject);
         setDoc(errorRef, {
            ...question,
-           baseId: question.baseId || (subject.includes(',') ? subject.split(',')[0] : subject),
+           baseId: baseIdToUse,
            errorAt: new Date().toISOString()
         }).catch(err => console.error("Auto error save failed:", err));
+
+        // Save a verified attempt
+        const attemptRef = collection(db, "users", auth.currentUser.uid, "attempts");
+        addDoc(attemptRef, {
+           questionId: question.id,
+           baseId: baseIdToUse,
+           isCorrect: false,
+           timestamp: serverTimestamp()
+        }).catch(err => console.error("Attempt save failed:", err));
       }
       
       if (aiEnabled) {

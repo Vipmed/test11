@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import * as mammoth from "mammoth";
 import { parseOffice } from "officeparser";
 import { db, auth } from "@/src/lib/firebase";
-import { collection, addDoc, doc, serverTimestamp, writeBatch, query, getDocs, updateDoc, deleteDoc, orderBy, where } from "firebase/firestore";
+import { collection, addDoc, doc, serverTimestamp, writeBatch, query, getDocs, updateDoc, deleteDoc, orderBy, where, collectionGroup } from "firebase/firestore";
 import { Database, FileText, Plus, Trash2, Edit3, CheckCircle, XCircle, Upload, Loader2, Sparkles, Eye } from "lucide-react";
 
 import { logEvent, AuditEventType } from "@/src/lib/audit";
@@ -46,36 +46,46 @@ export default function DatabaseTab({ showAlert, setPromptModal, setPromptValue,
 
   const removeBase = async (id: string) => {
     setConfirmModal({
-      message: "Ви впевнені, що хочете видалити цю базу? Всі питання будуть стерті.",
+      message: "Ви впевнені, що хочете видалити цю базу? Всі питання (включаючи збережені у користувачів) та статистика спроб будуть стерті.",
       onConfirm: async () => {
         try {
-          const qRef = collection(db, "questions");
-          const qSnapshot = await getDocs(query(qRef, where("baseId", "==", id)));
+          // 1. Delete questions (Global and Saved Questions via collection group)
+          const qGroup = collectionGroup(db, "questions");
+          const qSnapshot = await getDocs(query(qGroup, where("baseId", "==", id)));
           
+          let totalDeleted = 0;
           const docs = qSnapshot.docs;
           for (let i = 0; i < docs.length; i += 400) {
              const batch = writeBatch(db);
              const chunk = docs.slice(i, i + 400);
              chunk.forEach((d) => batch.delete(d.ref));
-             if (i + 400 >= docs.length) {
-                batch.delete(doc(db, "bases", id));
-             }
              await batch.commit();
+             totalDeleted += chunk.length;
           }
-          
-          if (docs.length === 0) {
+
+          // 2. Delete attempts (via collection group)
+          const aGroup = collectionGroup(db, "attempts");
+          const aSnapshot = await getDocs(query(aGroup, where("baseId", "==", id)));
+          const aDocs = aSnapshot.docs;
+          for (let i = 0; i < aDocs.length; i += 400) {
              const batch = writeBatch(db);
-             batch.delete(doc(db, "bases", id));
+             const chunk = aDocs.slice(i, i + 400);
+             chunk.forEach((d) => batch.delete(d.ref));
              await batch.commit();
+             totalDeleted += chunk.length;
           }
           
-          logEvent(AuditEventType.DB_DELETE, `Base ID: ${id}`);
+          // 3. Delete the base record itself
+          await deleteDoc(doc(db, "bases", id));
+          
+          logEvent(AuditEventType.DB_DELETE, `Base ID: ${id}. Deleted ${totalDeleted} related documents.`);
           fetchBases();
           setConfirmModal(null);
+          showAlert("Базу та всі пов'язані дані користувачів успішно видалено.");
         } catch (error) {
           console.error(error);
           setConfirmModal(null);
-          showAlert("Помилка при видаленні.");
+          showAlert("Помилка при видаленні. Перевірте консоль для деталей.");
         }
       }
     });

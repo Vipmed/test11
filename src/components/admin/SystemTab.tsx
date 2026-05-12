@@ -1,7 +1,8 @@
+import React, { useEffect, useState } from "react";
 import { Crown, Loader2, Trash2, AlertTriangle } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { db } from "@/src/lib/firebase";
-import { doc, onSnapshot, updateDoc, setDoc, getDoc, collectionGroup, getDocs, writeBatch } from "firebase/firestore";
+import { doc, onSnapshot, updateDoc, setDoc, getDoc, collectionGroup, getDocs, writeBatch, collection } from "firebase/firestore";
 import { logEvent, AuditEventType } from "@/src/lib/audit";
 
 export default function SystemTab() {
@@ -74,7 +75,22 @@ export default function SystemTab() {
            deletedCount += aDocs.slice(i, i + 400).length;
         }
 
-        alert(`Очищення завершено. Видалено документів: ${deletedCount}`);
+        // 3. Reset aggregated fields in all user profiles
+        const usersSnap = await getDocs(collection(db, "users"));
+        const userDocs = usersSnap.docs;
+        for (let i = 0; i < userDocs.length; i += 400) {
+           const batch = writeBatch(db);
+           userDocs.slice(i, i + 400).forEach(d => {
+              batch.update(d.ref, {
+                 stats: { totalSolved: 0, totalCorrect: 0, byCategory: {}, activity: {} },
+                 streak: 0,
+                 progress: {}
+              });
+           });
+           await batch.commit();
+        }
+
+        alert(`Очищення завершено. Видалено документів/оновлено профілів: ${deletedCount + userDocs.length}`);
         logEvent(AuditEventType.SYSTEM_CONFIG_CHANGE, "HARD RESET: Cleared all user data");
      } catch (err) {
         console.error(err);

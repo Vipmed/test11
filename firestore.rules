@@ -1,0 +1,208 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Phase 0: Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Phase 3: Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        ('email' in request.auth.token && request.auth.token.email.lower() == 'vip.medicus@gmail.com') ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['ADMIN', 'SUPERADMIN'])
+      );
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && (
+        ('email' in request.auth.token && request.auth.token.email.lower() == 'vip.medicus@gmail.com') ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'SUPERADMIN')
+      );
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Validation Helpers
+    function isValidUser(data) {
+      return data.keys().hasAll(['email', 'role', 'isApproved', 'createdAt']) &&
+             data.email is string && data.email.size() <= 256 &&
+             data.role in ['USER', 'ADMIN', 'SUPERADMIN'] &&
+             data.isApproved is bool &&
+             (!('avatarUrl' in data) || (data.avatarUrl is string && data.avatarUrl.size() <= 512)) &&
+             (!('course' in data) || (data.course is string || data.course is int)) &&
+             (!('specialty' in data) || data.specialty is string) &&
+             (!('sessionType' in data) || data.sessionType is string) &&
+             (!('streak' in data) || data.streak is int) &&
+             (!('lastActiveDate' in data) || (data.lastActiveDate is string || data.lastActiveDate == null)) &&
+             (!('stats' in data) || data.stats is map) &&
+             (!('progress' in data) || data.progress is map) &&
+             (!('settings' in data) || isValidSettings(data.settings));
+    }
+
+    function isValidSettings(data) {
+      return (!('theme' in data) || data.theme is string) &&
+             (!('aiEnabled' in data) || data.aiEnabled is bool) &&
+             (!('sidebarEnabled' in data) || data.sidebarEnabled is bool) &&
+             (!('notifyNewBases' in data) || data.notifyNewBases is bool) &&
+             (!('notifyAiReports' in data) || data.notifyAiReports is bool) &&
+             (!('notifyStreak' in data) || data.notifyStreak is bool);
+    }
+
+    function isValidAuditLog(data) {
+      return data.keys().hasAll(['event', 'detail', 'timestamp']) &&
+             data.event is string &&
+             data.detail is string &&
+             data.timestamp == request.time &&
+             (!('userId' in data) || data.userId == null || data.userId is string) &&
+             (!('email' in data) || data.email == null || data.email is string);
+    }
+
+    function isValidSystemConfig(data) {
+      return (!('aiExplain' in data) || data.aiExplain is bool);
+    }
+
+    function isValidQuestion(data) {
+      return data.keys().hasAll(['text', 'options', 'correctIdx', 'baseId', 'category']) &&
+             data.text is string && data.text.size() <= 2000 &&
+             data.options is list && data.options.size() <= 20 &&
+             data.correctIdx is int &&
+             data.baseId is string &&
+             (data.keys().hasAll(['orderIndex']) ? data.orderIndex is int : true);
+    }
+
+    function isValidAttempt(data) {
+      return data.keys().hasAll(['userId', 'questionId', 'isCorrect', 'timestamp']) &&
+             data.userId == request.auth.uid &&
+             data.questionId is string &&
+             data.isCorrect is bool &&
+             data.timestamp == request.time &&
+             (!('interval' in data) || data.interval is int) &&
+             (!('easeFactor' in data) || data.easeFactor is number) &&
+             (!('repetition' in data) || data.repetition is int);
+    }
+
+    function isValidBase(data) {
+      return data.keys().hasAll(['name', 'count', 'status', 'createdAt']) &&
+             data.name is string && data.name.size() <= 256 &&
+             data.count is int &&
+             data.status in ['Active', 'Draft', 'Importing'] &&
+             data.createdAt == request.time;
+    }
+
+    function isValidReport(data) {
+      return data.keys().hasAll(['questionId', 'questionText', 'reportedBy', 'timestamp', 'status']) &&
+             data.questionId is string &&
+             data.questionText is string && data.questionText.size() <= 2000 &&
+             data.reportedBy is string && data.reportedBy.size() <= 256 &&
+             (!('comment' in data) || (data.comment is string && data.comment.size() <= 1000)) &&
+             data.timestamp == request.time &&
+             data.status == 'pending';
+    }
+
+    // --- Collections ---
+
+    // Users
+    match /users/{userId} {
+      allow get: if isSignedIn();
+      allow list: if isAdmin();
+      allow create: if (isOwner(userId) && isVerified() && isValidUser(incoming()) && (
+        (incoming().role == 'USER' && incoming().isApproved == false) ||
+        ('email' in request.auth.token && request.auth.token.email.lower() == 'vip.medicus@gmail.com' && incoming().role == 'SUPERADMIN' && incoming().isApproved == true)
+      ) && incoming().createdAt == request.time) || (isAdmin() && isValidUser(incoming()));
+      allow update: if (
+        (isOwner(userId) && isValidUser(incoming()) && (
+          incoming().diff(existing()).affectedKeys().hasOnly(['email', 'settings', 'avatarUrl', 'course', 'specialty', 'sessionType', 'streak', 'lastActiveDate', 'stats', 'progress']) ||
+          ('email' in request.auth.token && request.auth.token.email.lower() == 'vip.medicus@gmail.com' && incoming().role == 'SUPERADMIN' && incoming().isApproved == true)
+        )) ||
+        (isSuperAdmin() && (
+          incoming().diff(existing()).affectedKeys().hasOnly(['role', 'isApproved'])
+        ))
+      );
+    }
+    
+    // Saved Questions
+    match /saved_questions/{userId}/questions/{questionId} {
+      allow read: if isOwner(userId);
+      allow create, update: if isOwner(userId) && isValidQuestion(incoming());
+      allow delete: if isOwner(userId);
+    }
+
+    // Settings
+    match /users/{userId}/settings/current {
+      allow get, write: if isOwner(userId) && isValidSettings(incoming());
+    }
+
+    // Questions
+    match /questions/{questionId} {
+      allow read: if isSignedIn();
+      allow create, update: if isAdmin() && isValidQuestion(incoming());
+      allow delete: if isSuperAdmin();
+    }
+
+    // Attempts
+    match /users/{userId}/attempts/{attemptId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidAttempt(incoming()) && exists(/databases/$(database)/documents/questions/$(incoming().questionId));
+      allow update: if isOwner(userId) && isValidAttempt(incoming()) && incoming().questionId == existing().questionId;
+    }
+
+    // Audit Logs
+    match /audit_logs/{logId} {
+      allow read: if isSuperAdmin();
+      allow create: if isSignedIn() && isValidAuditLog(incoming());
+    }
+
+    // System Config
+    match /system/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin() && isValidSystemConfig(incoming());
+    }
+
+    // Payments
+    match /payments/{paymentId} {
+      allow get: if isSignedIn() && (request.auth.uid == resource.data.userId || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid && incoming().status == 'PENDING';
+      allow update: if isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['status']);
+    }
+
+    // Bases
+    match /bases/{baseId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin() && isValidBase(incoming()) && incoming().createdAt == request.time;
+      allow update: if isAdmin() && isValidBase(incoming());
+      allow delete: if isSuperAdmin();
+    }
+
+    // Reports
+    match /reports/{reportId} {
+      allow list: if isAdmin();
+      allow get: if isAdmin();
+      allow create: if isSignedIn() && isValidReport(incoming()) && incoming().timestamp == request.time;
+      allow delete: if isAdmin();
+    }
+  }
+}

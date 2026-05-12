@@ -1,0 +1,161 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with role, approval status and streak info",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["USER", "ADMIN", "SUPERADMIN"] },
+        "isApproved": { "type": "boolean" },
+        "streak": { "type": "integer" },
+        "lastActiveDate": { "type": "string" },
+        "stats": { 
+          "type": "object",
+          "properties": {
+            "totalSolved": { "type": "integer" },
+            "totalCorrect": { "type": "integer" },
+            "byCategory": { "type": "object" },
+            "activity": { "type": "object" }
+          }
+        },
+        "progress": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "role", "isApproved", "createdAt"]
+    },
+    "Settings": {
+      "title": "Settings",
+      "description": "User personal app configuration",
+      "type": "object",
+      "properties": {
+        "autoNext": { "type": "boolean" },
+        "autoNextDelay": { "type": "number" },
+        "theme": { "type": "string" }
+      },
+      "required": ["autoNext", "autoNextDelay", "theme"]
+    },
+    "Question": {
+      "title": "Question",
+      "description": "Medical question entry",
+      "type": "object",
+      "properties": {
+        "text": { "type": "string" },
+        "options": { "type": "array", "items": { "type": "string" } },
+        "correctIdx": { "type": "integer" },
+        "category": { "type": "string" },
+        "baseId": { "type": "string" }
+      },
+      "required": ["text", "options", "correctIdx", "baseId"]
+    },
+    "Attempt": {
+      "title": "Attempt",
+      "description": "Individual question attempt for SM-2 logic",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "questionId": { "type": "string" },
+        "isCorrect": { "type": "boolean" },
+        "interval": { "type": "integer" },
+        "easeFactor": { "type": "number" },
+        "repetition": { "type": "integer" },
+        "nextReview": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "questionId", "isCorrect", "interval", "easeFactor", "repetition", "createdAt"]
+    },
+    "ActionLog": {
+      "title": "ActionLog",
+      "description": "Audit trail for admin actions",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "action": { "type": "string" },
+        "status": { "type": "string" },
+        "payload": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "action", "status", "createdAt"]
+    },
+    "PaymentRequest": {
+      "title": "PaymentRequest",
+      "description": "User proof of payment for access",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "receiptUrl": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "receiptUrl", "status", "createdAt"]
+    },
+    "Base": {
+      "title": "Question Base",
+      "description": "A collection of questions (KROK base)",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "count": { "type": "integer" },
+        "course": { "type": "string" },
+        "specialty": { "type": "string", "enum": ["med", "dent", "pharm"] },
+        "session": { "type": "string", "enum": ["winter", "summer"] },
+        "status": { "type": "string", "enum": ["Active", "Draft", "Importing"] },
+        "color": { "type": "string" },
+        "content": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "count", "status", "createdAt"]
+    },
+    "Report": {
+      "title": "Question Report",
+      "description": "Error report for a specific question",
+      "type": "object",
+      "properties": {
+        "questionId": { "type": "string" },
+        "questionText": { "type": "string" },
+        "reportedBy": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["pending", "resolved"] }
+      },
+      "required": ["questionId", "questionText", "timestamp", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Public user profiles with roles"
+    },
+    "/users/{userId}/settings/current": {
+      "schema": "Settings",
+      "description": "Private user settings"
+    },
+    "/questions/{questionId}": {
+      "schema": "Question",
+      "description": "Global test questions"
+    },
+    "/users/{userId}/attempts/{attemptId}": {
+      "schema": "Attempt",
+      "description": "User personal question performance"
+    },
+    "/logs/{logId}": {
+      "schema": "ActionLog",
+      "description": "System audit logs"
+    },
+    "/payments/{paymentId}": {
+      "schema": "PaymentRequest",
+      "description": "Access requests and payment proofs"
+    },
+    "/bases/{baseId}": {
+      "schema": "Base",
+      "description": "Question database metadata"
+    },
+    "/reports/{reportId}": {
+      "schema": "Report",
+      "description": "User-reported question errors"
+    },
+    "/saved_questions/{userId}/questions/{questionId}": {
+      "schema": "Question",
+      "description": "User personal saved questions"
+    }
+  }
+}

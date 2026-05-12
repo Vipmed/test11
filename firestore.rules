@@ -25,14 +25,14 @@ service cloud.firestore {
 
     function isAdmin() {
       return isSignedIn() && (
-        ('email' in request.auth.token && request.auth.token.email.lower() == 'vip.medicus@gmail.com') ||
+        ('email' in request.auth.token && request.auth.token.email.toLower() == 'vip.medicus@gmail.com') ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['ADMIN', 'SUPERADMIN'])
       );
     }
 
     function isSuperAdmin() {
       return isSignedIn() && (
-        ('email' in request.auth.token && request.auth.token.email.lower() == 'vip.medicus@gmail.com') ||
+        ('email' in request.auth.token && request.auth.token.email.toLower() == 'vip.medicus@gmail.com') ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'SUPERADMIN')
       );
     }
@@ -112,12 +112,12 @@ service cloud.firestore {
     }
 
     function isValidBase(data) {
-      let isCreate = request.method == 'create';
-      return (isCreate ? data.keys().hasAll(['name', 'count', 'status', 'createdAt']) : true) &&
-             (!('name' in data) || (data.name is string && data.name.size() <= 256)) &&
+      return (!('name' in data) || (data.name is string && data.name.size() <= 256)) &&
              (!('count' in data) || data.count is int) &&
              (!('status' in data) || data.status in ['Active', 'Draft', 'Importing']) &&
-             (!('createdAt' in data) || (isCreate ? data.createdAt == request.time : data.createdAt == existing().createdAt));
+             (!('course' in data) || (data.course is string || data.course is int)) &&
+             (!('specialty' in data) || data.specialty is string) &&
+             (!('session' in data) || data.session is string);
     }
 
     function isValidReport(data) {
@@ -138,7 +138,7 @@ service cloud.firestore {
       allow list: if isAdmin();
       allow create: if (isOwner(userId) && isValidUser(incoming()) && (
         (incoming().role == 'USER' && incoming().isApproved == false) ||
-        ('email' in request.auth.token && request.auth.token.email.lower() == 'vip.medicus@gmail.com' && incoming().role == 'SUPERADMIN' && incoming().isApproved == true)
+        ('email' in request.auth.token && request.auth.token.email.toLower() == 'vip.medicus@gmail.com' && incoming().role == 'SUPERADMIN' && incoming().isApproved == true)
       ) && incoming().createdAt == request.time) || (isAdmin() && isValidUser(incoming()));
       allow update: if (
         (isOwner(userId) && isValidUser(incoming()) && (
@@ -148,7 +148,7 @@ service cloud.firestore {
           incoming().isApproved == existing().isApproved &&
           (incoming().createdAt == existing().createdAt || !('createdAt' in incoming().diff(existing()).affectedKeys()))
           ||
-          ('email' in request.auth.token && request.auth.token.email.lower() == 'vip.medicus@gmail.com' && incoming().role == 'SUPERADMIN' && incoming().isApproved == true)
+          ('email' in request.auth.token && request.auth.token.email.toLower() == 'vip.medicus@gmail.com' && incoming().role == 'SUPERADMIN' && incoming().isApproved == true)
         )) ||
         (isSuperAdmin() && (
           incoming().diff(existing()).affectedKeys().hasOnly(['role', 'isApproved'])

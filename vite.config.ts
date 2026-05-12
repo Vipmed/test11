@@ -24,15 +24,16 @@ export default defineConfig(({mode}) => {
           icons: [
             {
               src: 'favicon.svg',
-              sizes: '32x32',
-              type: 'image/svg+xml'
+              sizes: 'any',
+              type: 'image/svg+xml',
+              purpose: 'any maskable'
             }
           ]
         }
       })
     ],
     define: {
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+      'process.env.GEMINI_API_KEY': env.GEMINI_API_KEY ? JSON.stringify(env.GEMINI_API_KEY) : '""',
     },
     resolve: {
       alias: {

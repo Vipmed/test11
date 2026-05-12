@@ -155,7 +155,8 @@ export default function UsersTab({ showAlert, setConfirmModal }: UsersTabProps) 
       }
 
       // 1. Prepare email
-      const finalEmail = newUser.email.includes("@") ? newUser.email : `${newUser.email}@medicus.ua`;
+      const cleanEmail = newUser.email.trim();
+      const finalEmail = cleanEmail.includes("@") ? cleanEmail : `${cleanEmail}@medicus.ai`;
 
       // 2. Create in Firebase Auth using a dedicated secondary instance
       let secondaryApp;

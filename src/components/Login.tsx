@@ -44,7 +44,9 @@ export default function Login() {
     try {
       let finalEmail = email;
       if (!email.includes("@")) {
-        finalEmail = `${email}@medicus.ua`;
+        finalEmail = `${email.trim()}@medicus.ai`;
+      } else {
+        finalEmail = email.trim();
       }
 
       if (isRegistering) {
@@ -129,7 +131,7 @@ export default function Login() {
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
               <input 
                 type="text" 
-                placeholder="Логін або Email" 
+                placeholder="Логін (@medicus.ai) або Email" 
                 className="w-full bg-slate-900 border border-slate-800 rounded-xl py-3 pl-10 text-sm text-white focus:outline-none focus:border-accent"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
